@@ -30,7 +30,7 @@ struct DocRoot : Block {
 
 class MarkdownFilter : public IndividualFilter {
 public:
-  MarkdownFilter() : root(), back(&root), prev_blank(true) {
+  MarkdownFilter() : root(), back(&root), prev_blank(true), inline_code(0) {
     name_ = "markdown-filter";
     order_num_ = 0.35;
     //html_filter = new_html_filter();
@@ -55,6 +55,7 @@ private:
   DocRoot root;
   Block * back;
   bool prev_blank;
+  int inline_code;
 
   void kill(Block * blk) {
     Block * cur = &root;
@@ -279,6 +280,7 @@ struct FencedCodeBlock : Block {
         ++i;
       if (i < 3) return NULL;
       itr.blank_adv(i);
+      itr.blank_rest(); // blank info string
       return new FencedCodeBlock(delem, i);
     }
     return NULL;
@@ -382,48 +384,81 @@ NewBlock new_block(bool prev_blank, Iterator & itr) {
   return NewBlock(nblk, yes);
 }
 
-void MarkdownFilter::process(FilterChar * & start, FilterChar * & stop) {
-  Iterator itr(start,stop);
-  while (!itr.eos()) {
-    //COUT.printf("next line");
-    itr.eat_space();
-
-    Block * blk = &root;
-    Block::KeepOpenState keep_open;
-    for (; blk; blk = blk->next) {
-      keep_open = blk->keep_open(itr);
-      if (keep_open != Block::YES)
-        break;
-    }
-
-    bool blank_line = itr.eol();
-    NewBlock new_blk = blank_line || (keep_open == Block::YES && back->leaf())
-      ? NewBlock()
-      : new_block(prev_blank, itr);
-    
-    if (new_blk.yes || keep_open == Block::NEVER || (prev_blank && !blank_line)) {
-      CERR.printf("*** kill\n");
-      kill(blk);
-    }
-    if (new_blk.blk) {
-      prev_blank = true;
-      CERR.printf("*** new block\n");
-      add(new_blk.blk);
-    }
-
-    // note: single line blocks are always leafs
-    while (new_blk.blk && !new_blk.blk->leaf()) {
-      new_blk = new_block(prev_blank, itr);
-      if (new_blk.blk) {
-        CERR.printf("*** new block\n");
-        add(new_blk.blk);
+int handle_inline_code(int marker_len, Iterator & itr) {
+  while (!itr.eol()) {
+    if (*itr == '`') {
+      int i = 1;
+      while (i < marker_len && itr[i] == '`')
+        ++i;
+      if (i == marker_len) {
+        itr.blank_adv(i);
+        return 0;
       }
     }
-    
-    dump();
+    itr.blank_adv();
+  }
+  return marker_len;
+}
 
-    if (back->blank_rest()) {
-      itr.blank_rest();
+void MarkdownFilter::process(FilterChar * & start, FilterChar * & stop) {
+  Iterator itr(start,stop);
+  bool blank_line = false;
+  while (!itr.eos()) {
+    CERR.printf("*** inline_code = %d\n", inline_code);
+    if (inline_code > 0) {
+      inline_code = handle_inline_code(inline_code, itr);
+    } else {
+      itr.eat_space();
+      
+      Block * blk = &root;
+      Block::KeepOpenState keep_open;
+      for (; blk; blk = blk->next) {
+        keep_open = blk->keep_open(itr);
+        if (keep_open != Block::YES)
+          break;
+      }
+      
+      blank_line = itr.eol();
+      NewBlock new_blk = blank_line || (keep_open == Block::YES && back->leaf())
+        ? NewBlock()
+        : new_block(prev_blank, itr);
+      
+      if (new_blk.yes || keep_open == Block::NEVER || (prev_blank && !blank_line)) {
+        CERR.printf("*** kill\n");
+        kill(blk);
+      }
+      if (new_blk.blk) {
+        prev_blank = true;
+      CERR.printf("*** new block\n");
+      add(new_blk.blk);
+      }
+      
+      // note: single line blocks are always leafs
+      while (new_blk.blk && !new_blk.blk->leaf()) {
+        new_blk = new_block(prev_blank, itr);
+        if (new_blk.blk) {
+          CERR.printf("*** new block\n");
+          add(new_blk.blk);
+        }
+      }
+    
+      dump();
+      
+      if (back->blank_rest()) {
+        itr.blank_rest();
+      }
+    }
+
+    // now process line, mainly blank inline code and handle html tags
+    while (!itr.eol()) {
+      if (*itr == '`') {
+        int i = 1;
+        while (itr[i] == '`')
+          ++i;
+        itr.blank_adv(i);
+        inline_code = handle_inline_code(i, itr);
+      }
+      itr.adv();
     }
 
     //html_filter->process_inplace(start, i);
