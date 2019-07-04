@@ -305,48 +305,56 @@ struct FencedCodeBlock : Block {
   bool leaf() const {return true;}
 };
 
-// tests if we start some other block and need and need to close unmatched blocks
-bool single_line_block_proc(Iterator & itr) {
-#if 0
-  if (indent >= 4)
-    return false;
-  switch (*itr) {
-  case '-': case '_': case '*':
-    Iterator i = itr;
-    i.adv();
-    while (*i == *itr)
+struct SingleLineBlock : Block {
+  static SingleLineBlock * start_block(Iterator & itr) {
+    unsigned int chr = *itr;
+    switch (chr) {
+    case '-': case '_': case '*': {
+      Iterator i = itr;
       i.adv();
-    if (i.eol()) {
-      itr = i;
-      return true;
+      while (*i == *itr)
+        i.adv();
+      if (i.eol()) {
+        itr = i; 
+        return new SingleLineBlock();
+      }
+      if (chr != '-') // fall though on '-' case
+        break;
     }
-  case '-': case '=':
-    Iterator i = itr;
-    i.inc();
-    while (*i == *itr)
+    case '=': {
+      Iterator i = itr;
       i.inc();
-    i.eat_space();
-    if (i.eol()) {
-      itr = i;
-      return true;
+      while (*i == *itr)
+        i.inc();
+      i.eat_space();
+      if (i.eol()) {
+        itr = i;
+        return new SingleLineBlock();
+      }
+      break;
     }
-  case '#':
-    return true;
-    break;
-  case '[':
-    Iterator i = itr;
-    i.adv();
-    if (*i == ']') break;
-    while (*i != ']') {
+    case '#':
+      return new SingleLineBlock();
+      break;
+    case '[': {
+      Iterator i = itr;
       i.adv();
+      if (*i == ']') break;
+      while (*i != ']') {
+        i.adv();
+      }
+      i.inc();
+      if (*i != ':') break;
+      return new SingleLineBlock();
     }
-    i.inc();
-    if (*i != ':') break;
-    break;
+    }
+    return NULL;
   }
-#endif
-  return false;
-}
+  KeepOpenState keep_open(Iterator & itr) {return NEVER;  }
+  bool blank_rest() const {return false;}
+  bool leaf() const {return true;}
+  void dump() const {CERR.printf("SingleLineBlock\n");}
+};
 
 //
 // MarkdownFilter implementation
@@ -374,14 +382,14 @@ struct NewBlock {
   NewBlock(Block * blk, bool yes) : blk(blk), yes(yes) {}
 };
 
-NewBlock new_block(bool prev_blank, Iterator & itr) {
+Block * start_block(bool prev_blank, Iterator & itr) {
   Block * nblk = NULL;
-  bool yes = (nblk = IndentedCodeBlock::start_block(prev_blank, itr))
+  (nblk = IndentedCodeBlock::start_block(prev_blank, itr))
     || (nblk = FencedCodeBlock::start_block(itr))
     || (nblk = BlockQuote::start_block(itr))
     || (nblk = ListItem::start_block(itr))
-    || single_line_block_proc(itr);
-  return NewBlock(nblk, yes);
+    || (nblk = SingleLineBlock::start_block(itr));
+  return nblk;
 }
 
 int handle_inline_code(int marker_len, Iterator & itr) {
@@ -404,8 +412,8 @@ void MarkdownFilter::process(FilterChar * & start, FilterChar * & stop) {
   Iterator itr(start,stop);
   bool blank_line = false;
   while (!itr.eos()) {
-    CERR.printf("*** inline_code = %d\n", inline_code);
     if (inline_code > 0) {
+      CERR.printf("*** inline code cont\n");
       inline_code = handle_inline_code(inline_code, itr);
     } else {
       itr.eat_space();
@@ -419,29 +427,29 @@ void MarkdownFilter::process(FilterChar * & start, FilterChar * & stop) {
       }
       
       blank_line = itr.eol();
-      NewBlock new_blk = blank_line || (keep_open == Block::YES && back->leaf())
-        ? NewBlock()
-        : new_block(prev_blank, itr);
+      Block * nblk = blank_line || (keep_open == Block::YES && back->leaf())
+        ? NULL
+        : start_block(prev_blank, itr);
       
-      if (new_blk.yes || keep_open == Block::NEVER || (prev_blank && !blank_line)) {
+      if (nblk || keep_open == Block::NEVER || (prev_blank && !blank_line)) {
         CERR.printf("*** kill\n");
         kill(blk);
       }
-      if (new_blk.blk) {
+
+      if (nblk) {
+        CERR.printf("*** new block\n");
+        add(nblk);
         prev_blank = true;
-      CERR.printf("*** new block\n");
-      add(new_blk.blk);
       }
       
-      // note: single line blocks are always leafs
-      while (new_blk.blk && !new_blk.blk->leaf()) {
-        new_blk = new_block(prev_blank, itr);
-        if (new_blk.blk) {
+      while (nblk && !nblk->leaf()) {
+        nblk = start_block(prev_blank, itr);
+        if (nblk) {
           CERR.printf("*** new block\n");
-          add(new_blk.blk);
+          add(nblk);
         }
       }
-    
+      
       dump();
       
       if (back->blank_rest()) {
