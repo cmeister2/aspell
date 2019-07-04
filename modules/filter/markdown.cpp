@@ -28,9 +28,11 @@ struct DocRoot : Block {
   bool leaf() const {return false;}
 };
 
+struct MultiLineInlineState;
+
 class MarkdownFilter : public IndividualFilter {
 public:
-  MarkdownFilter() : root(), back(&root), prev_blank(true), inline_code(0) {
+  MarkdownFilter() : root(), back(&root), prev_blank(true), inline_state() {
     name_ = "markdown-filter";
     order_num_ = 0.35;
     //html_filter = new_html_filter();
@@ -55,8 +57,8 @@ private:
   DocRoot root;
   Block * back;
   bool prev_blank;
-  int inline_code;
-
+  MultiLineInlineState * inline_state;
+ 
   void kill(Block * blk) {
     Block * cur = &root;
     while (cur->next && cur->next != blk)
@@ -217,7 +219,7 @@ struct ListItem : Block {
       }
     }
     if (marker != '\0') {
-      itr.blank_adv(width);
+      itr.adv(width);
       if (itr.indent <= 4) {
         int indent = width + itr.indent;
         itr.indent = 0;
@@ -350,7 +352,7 @@ struct SingleLineBlock : Block {
     }
     return NULL;
   }
-  KeepOpenState keep_open(Iterator & itr) {return NEVER;  }
+  KeepOpenState keep_open(Iterator & itr) {return NEVER;}
   bool blank_rest() const {return false;}
   bool leaf() const {return true;}
   void dump() const {CERR.printf("SingleLineBlock\n");}
@@ -375,13 +377,6 @@ MarkdownFilter::~MarkdownFilter() {
   //delete html_filter;
 }
 
-struct NewBlock {
-  Block * blk; // empty if a single line block
-  bool yes;
-  NewBlock() : blk(NULL), yes(false) {}
-  NewBlock(Block * blk, bool yes) : blk(blk), yes(yes) {}
-};
-
 Block * start_block(bool prev_blank, Iterator & itr) {
   Block * nblk = NULL;
   (nblk = IndentedCodeBlock::start_block(prev_blank, itr))
@@ -392,29 +387,55 @@ Block * start_block(bool prev_blank, Iterator & itr) {
   return nblk;
 }
 
-int handle_inline_code(int marker_len, Iterator & itr) {
-  while (!itr.eol()) {
+struct MultiLineInline {
+  virtual MultiLineInline * close(Iterator & itr) = 0;
+  virtual ~MultiLineInline() {}
+};
+
+struct InlineCode : MultiLineInline {
+  int marker_len;
+  MultiLineInline * open(Iterator & itr) {
     if (*itr == '`') {
       int i = 1;
-      while (i < marker_len && itr[i] == '`')
+      while (itr[i] == '`')
         ++i;
-      if (i == marker_len) {
-        itr.blank_adv(i);
-        return 0;
-      }
+      itr.blank_adv(i);
+      marker_len = i;
+      return close(itr);
     }
-    itr.blank_adv();
+    return NULL;
   }
-  return marker_len;
-}
+  MultiLineInline * close(Iterator & itr) {
+    while (!itr.eol()) {
+      if (*itr == '`') {
+        int i = 1;
+        while (i < marker_len && itr[i] == '`')
+          ++i;
+        if (i == marker_len) {
+          itr.blank_adv(i);
+          return NULL;
+        }
+      }
+      itr.blank_adv();
+    }
+    return this;
+  }
+};
+
+struct MultiLineInlineState {
+  MultiLineInlineState() : ptr() {}
+  MultiLineInline * ptr;
+  InlineCode inline_code;
+};
 
 void MarkdownFilter::process(FilterChar * & start, FilterChar * & stop) {
+  if (!inline_state)
+    inline_state = new MultiLineInlineState();
   Iterator itr(start,stop);
   bool blank_line = false;
   while (!itr.eos()) {
-    if (inline_code > 0) {
-      CERR.printf("*** inline code cont\n");
-      inline_code = handle_inline_code(inline_code, itr);
+    if (inline_state->ptr) {
+      inline_state->ptr = inline_state->ptr->close(itr);
     } else {
       itr.eat_space();
       
@@ -459,13 +480,7 @@ void MarkdownFilter::process(FilterChar * & start, FilterChar * & stop) {
 
     // now process line, mainly blank inline code and handle html tags
     while (!itr.eol()) {
-      if (*itr == '`') {
-        int i = 1;
-        while (itr[i] == '`')
-          ++i;
-        itr.blank_adv(i);
-        inline_code = handle_inline_code(i, itr);
-      }
+      inline_state->ptr = inline_state->inline_code.open(itr);
       itr.adv();
     }
 
