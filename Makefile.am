@@ -166,6 +166,7 @@ optfiles = \
   modules/filter/email-filter.info\
   modules/filter/tex-filter.info\
   modules/filter/sgml-filter.info\
+  modules/filter/markdown-filter.info\
   modules/filter/html-filter.info\
   modules/filter/context-filter.info\
   modules/filter/nroff-filter.info\
@@ -175,6 +176,7 @@ optfiles = \
 fltfiles = \
   modules/filter/modes/html.amf \
   modules/filter/modes/sgml.amf \
+  modules/filter/modes/markdown.amf \
   modules/filter/modes/tex.amf \
   modules/filter/modes/email.amf \
   modules/filter/modes/ccpp.amf \
@@ -196,6 +198,7 @@ libaspell_la_SOURCES +=\
   modules/filter/email.cpp\
   modules/filter/tex.cpp\
   modules/filter/sgml.cpp\
+  modules/filter/markdown.cpp\
   modules/filter/context.cpp\
   modules/filter/nroff.cpp\
   modules/filter/texinfo.cpp
@@ -219,7 +222,7 @@ tex_filter_la_SOURCES = modules/filter/tex.cpp
 tex_filter_la_LIBADD = libaspell.la
 tex_filter_la_LDFLAGS  = ${filter_ldflags}
 
-sgml_filter_la_SOURCES  = modules/filter/sgml.cpp
+sgml_filter_la_SOURCES  = modules/filter/sgml.cpp modules/filter/markdown.cpp
 sgml_filter_la_LIBADD = libaspell.la
 sgml_filter_la_LDFLAGS  = ${filter_ldflags}
 
