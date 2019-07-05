@@ -185,7 +185,7 @@ void Iterator::next_line() {
 }
 
 //
-// Markdown blocks
+// Markdown blocks and inlines
 // 
 
 struct BlockQuote : Block {
@@ -364,31 +364,6 @@ struct SingleLineBlock : Block {
   void dump() const {CERR.printf("SingleLineBlock\n");}
 };
 
-//
-// MarkdownFilter implementation
-//
-
-PosibErr<bool> MarkdownFilter::setup(Config * cfg) {
-  multiline_tags = cfg->retrieve_bool("f-markdown-multiline-tags");
-  raw_start_tags.clear();
-  cfg->retrieve_list("f-markdown-raw-start-tags",  &raw_start_tags);
-  block_start_tags.clear();
-  cfg->retrieve_list("f-markdown-block-start-tags", &block_start_tags);
-
-  //return html_filter->setup(cfg);
-  return true;
-}
-
-void MarkdownFilter::reset() {
-  // FIXME: Correctly implement me
-  //html_filter->reset();
-}
-
-
-MarkdownFilter::~MarkdownFilter() {
-  //delete html_filter;
-}
-
 struct MultilineInline {
   virtual MultilineInline * close(Iterator & itr) = 0;
   virtual ~MultilineInline() {}
@@ -526,10 +501,12 @@ ParseTagState parse_attribute(Iterator & itr, ParseTagState state) {
 }
 
 struct HtmlTag : MultilineInline {
+  HtmlTag(bool mlt) : multi_line_tags(mlt) {}
   void * start_pos; // used for caching
   String tag;
   bool closing;
   ParseTagState state;
+  bool multi_line_tags;
   void reset() {
     start_pos = NULL;
     tag.clear();
@@ -551,22 +528,17 @@ struct HtmlTag : MultilineInline {
         itr.inc();
         closing = true;
       }
-      if (!parse_tag_name(itr, tag)) {
-        itr = itr0;
-        return NULL;
-      }
+      if (!parse_tag_name(itr, tag))
+        return invalid(itr0, itr);
       state = Between;
       if (itr.eol()) {
-        return this;
+        return incomplete(itr0, itr);
       } else if (parse_tag_close(itr)) {
-        state = Valid;
-        return NULL;
+        return valid();
       } else if (asc_isspace(*itr)) {
         return close(itr0, itr);
       } else {
-        state = Invalid;
-        itr = itr0;
-        return NULL;
+        return invalid(itr0, itr);
       }
     }
     return NULL;
@@ -578,29 +550,37 @@ struct HtmlTag : MultilineInline {
         if (leading_space)
           itr.eat_space();
         
-        if (parse_tag_close(itr)) {
-          state = Valid;
-          return NULL;
-        }
+        if (parse_tag_close(itr))
+          return valid();
         
-        if (itr.line_pos != 0 && !leading_space) {
-          state = Invalid;
-          itr = itr0;
-          return NULL;
-        }
+        if (itr.line_pos != 0 && !leading_space)
+          return invalid(itr0, itr);
       }
 
       state = parse_attribute(itr, state);
-      if (state == Invalid) {
-        itr = itr0;
-        return NULL;
-      }
+      if (state == Invalid)
+        return invalid(itr0, itr);
     }
-    return this;
+    return incomplete(itr0, itr);
   }
   MultilineInline * close(Iterator & itr) {
     Iterator itr0 = itr;
     return close(itr0, itr);
+  }
+
+  MultilineInline * valid() {
+    state = Valid;
+    return NULL;
+  }
+  MultilineInline * invalid(const Iterator & itr0, Iterator & itr) {
+    state = Invalid;
+    itr = itr0;
+    return NULL;
+  }
+  MultilineInline * incomplete(const Iterator & itr0, Iterator & itr) {
+    if (multi_line_tags)
+      return this;
+    return invalid(itr0, itr);
   }
 };
 
@@ -622,7 +602,7 @@ Block * start_html_block(HtmlTag & tag, Iterator & itr) {
 }
 
 struct MultilineInlineState {
-  MultilineInlineState() : ptr() {}
+  MultilineInlineState(bool mlt) : ptr(), tag(mlt) {}
   MultilineInline * ptr;
   InlineCode inline_code;
   HtmlComment comment;
@@ -632,9 +612,35 @@ struct MultilineInlineState {
   }
 };
 
+//
+// MarkdownFilter implementation
+//
+
+PosibErr<bool> MarkdownFilter::setup(Config * cfg) {
+  bool multiline_tags = cfg->retrieve_bool("f-markdown-multiline-tags");
+  if (inline_state)
+    free(inline_state);
+  inline_state = new MultilineInlineState(multiline_tags);
+  raw_start_tags.clear();
+  cfg->retrieve_list("f-markdown-raw-start-tags",  &raw_start_tags);
+  block_start_tags.clear();
+  cfg->retrieve_list("f-markdown-block-start-tags", &block_start_tags);
+
+  //return html_filter->setup(cfg);
+  return true;
+}
+
+void MarkdownFilter::reset() {
+  // FIXME: Correctly implement me
+  //html_filter->reset();
+}
+
+
+MarkdownFilter::~MarkdownFilter() {
+  //delete html_filter;
+}
+
 void MarkdownFilter::process(FilterChar * & start, FilterChar * & stop) {
-  if (!inline_state)
-    inline_state = new MultilineInlineState();
   inline_state->reset(); // to clear cached values
   Iterator itr(start,stop);
   bool blank_line = false;
