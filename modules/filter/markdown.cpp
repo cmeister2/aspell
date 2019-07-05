@@ -17,16 +17,14 @@ struct Block {
   Block * next;
   Block() : next() {}
   enum KeepOpenState {NEVER, MAYBE, YES};
-  virtual KeepOpenState keep_open(Iterator &) = 0;
-  virtual bool blank_rest() const = 0;
+  virtual KeepOpenState proc_line(Iterator &) = 0;
   virtual void dump() const = 0;
   virtual bool leaf() const = 0;
   virtual ~Block() {}
 };
 
 struct DocRoot : Block {
-  KeepOpenState keep_open(Iterator &) {return YES;}
-  bool blank_rest() const {return false;}
+  KeepOpenState proc_line(Iterator &) {return YES;}
   void dump() const {CERR.printf("DocRoot\n");}
   bool leaf() const {return false;}
 };
@@ -198,7 +196,7 @@ struct BlockQuote : Block {
     }
     return NULL;
   }
-  KeepOpenState keep_open(Iterator & itr) {
+  KeepOpenState proc_line(Iterator & itr) {
     if (*itr == '>') {
       itr.blank_adv();
       return YES;
@@ -206,9 +204,6 @@ struct BlockQuote : Block {
       return NEVER;
     }
     return MAYBE;
-  }
-  bool blank_rest() const {
-    return false;
   }
   void dump() const {CERR.printf("BlockQuote\n");}
   bool leaf() const {return false;}
@@ -249,15 +244,12 @@ struct ListItem : Block {
     }
     return NULL;
   }
-  KeepOpenState keep_open(Iterator & itr) {
+  KeepOpenState proc_line(Iterator & itr) {
     if (!itr.eol() && itr.indent >= indent) {
       itr.indent -= indent;
       return YES;
     }
     return MAYBE;
-  }
-  bool blank_rest() const {
-    return false;
   }
   void dump() const {CERR.printf("ListItem: '%c' %d\n", marker, indent);}
   bool leaf() const {return false;}
@@ -271,17 +263,14 @@ struct IndentedCodeBlock : Block {
     }
     return NULL;
   }
-  KeepOpenState keep_open(Iterator & itr) {
+  KeepOpenState proc_line(Iterator & itr) {
     if (itr.indent >= 4) {
-      itr.indent -= 4;
+      itr.blank_rest();
       return YES;
     } else if (itr.eol()) {
       return YES;
     }
     return NEVER;
-  }
-  bool blank_rest() const {
-    return true;
   }
   void dump() const {CERR.printf("IndentedCodeBlock\n");}
   bool leaf() const {return true;}
@@ -304,18 +293,19 @@ struct FencedCodeBlock : Block {
     }
     return NULL;
   }
-  KeepOpenState keep_open(Iterator & itr) {
+  KeepOpenState proc_line(Iterator & itr) {
     if (*itr == '`' || *itr == '~') {
       char delem = *itr;
       int i = 1;
       while (itr[i] == delem)
         ++i;
-      if (i < delem_len) return MAYBE;
       itr.blank_adv(i);
-      if (!itr.eol()) return MAYBE;
-      return NEVER;
+      if (i >= delem_len && itr.eol()) {
+        return NEVER;
+      }
     }
-    return MAYBE;
+    itr.blank_rest();
+    return YES;
   }
   bool blank_rest() const {
     return true;
@@ -369,8 +359,7 @@ struct SingleLineBlock : Block {
     }
     return NULL;
   }
-  KeepOpenState keep_open(Iterator & itr) {return NEVER;}
-  bool blank_rest() const {return false;}
+  KeepOpenState proc_line(Iterator & itr) {return NEVER;}
   bool leaf() const {return true;}
   void dump() const {CERR.printf("SingleLineBlock\n");}
 };
@@ -616,8 +605,9 @@ struct HtmlTag : MultilineInline {
 };
 
 struct HtmlBlock : Block {
-  KeepOpenState keep_open(Iterator & itr) {
+  KeepOpenState proc_line(Iterator & itr) {
     if (itr.eol()) return NEVER;
+    while (!itr.eol()) itr.inc();
     return YES;
   }
   bool blank_rest() const {return false;}
@@ -658,11 +648,11 @@ void MarkdownFilter::process(FilterChar * & start, FilterChar * & stop) {
       Block * blk = &root;
       Block::KeepOpenState keep_open;
       for (; blk; blk = blk->next) {
-        keep_open = blk->keep_open(itr);
+        keep_open = blk->proc_line(itr);
         if (keep_open != Block::YES)
           break;
       }
-      
+
       blank_line = itr.eol();
       Block * nblk = blank_line || (keep_open == Block::YES && back->leaf())
         ? NULL
@@ -671,6 +661,15 @@ void MarkdownFilter::process(FilterChar * & start, FilterChar * & stop) {
       if (nblk || keep_open == Block::NEVER || (prev_blank && !blank_line)) {
         CERR.printf("*** kill\n");
         kill(blk);
+      } else {
+        for (; blk; blk = blk->next) {
+          keep_open = blk->proc_line(itr);
+          if (keep_open == Block::NEVER) {
+            CERR.printf("***** kill\n");
+            kill(blk);
+            break;
+          }
+        }
       }
 
       if (nblk) {
@@ -678,7 +677,7 @@ void MarkdownFilter::process(FilterChar * & start, FilterChar * & stop) {
         add(nblk);
         prev_blank = true;
       }
-      
+
       while (nblk && !nblk->leaf()) {
         nblk = start_block(itr);
         if (nblk) {
@@ -686,16 +685,11 @@ void MarkdownFilter::process(FilterChar * & start, FilterChar * & stop) {
           add(nblk);
         }
       }
-      
+
       dump();
-      
-      if (back->blank_rest()) {
-        itr.blank_rest();
-      }
     }
-
     // now process line, mainly blank inline code and handle html tags
-
+      
     while (!itr.eol()) {
       inline_state->ptr = inline_state->inline_code.open(itr);
       if (inline_state->ptr) break;
