@@ -38,7 +38,7 @@ class MarkdownFilter : public IndividualFilter {
 public:
   MarkdownFilter() : root(), back(&root), prev_blank(true), inline_state() {
     name_ = "markdown-filter";
-    order_num_ = 0.35;
+    order_num_ = 0.30; // need to be before SGML filter
   }
   PosibErr<bool> setup(Config *);
   void reset();
