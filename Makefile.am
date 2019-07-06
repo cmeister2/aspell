@@ -211,7 +211,7 @@ filter_ldflags = -module -avoid-version
 ### Add name of filter library containing your filter. Name always
 ### must look like lib<filtername>-filter.la see development manual
 filter_LTLIBRARIES = email-filter.la tex-filter.la\
-	             sgml-filter.la context-filter.la\
+	             sgml-filter.la markdown-filter.la context-filter.la\
                      nroff-filter.la texinfo-filter.la
 
 email_filter_la_SOURCES = modules/filter/email.cpp
@@ -222,9 +222,13 @@ tex_filter_la_SOURCES = modules/filter/tex.cpp
 tex_filter_la_LIBADD = libaspell.la
 tex_filter_la_LDFLAGS  = ${filter_ldflags}
 
-sgml_filter_la_SOURCES  = modules/filter/sgml.cpp modules/filter/markdown.cpp
+sgml_filter_la_SOURCES  = modules/filter/sgml.cpp
 sgml_filter_la_LIBADD = libaspell.la
 sgml_filter_la_LDFLAGS  = ${filter_ldflags}
+
+markdown_filter_la_SOURCES  = modules/filter/markdown.cpp
+markdown_filter_la_LIBADD = libaspell.la
+markdown_filter_la_LDFLAGS  = ${filter_ldflags}
 
 context_filter_la_SOURCES  = modules/filter/context.cpp
 context_filter_la_LIBADD = libaspell.la

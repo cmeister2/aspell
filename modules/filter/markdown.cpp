@@ -3,15 +3,16 @@
 #include "config.hpp"
 #include "indiv_filter.hpp"
 #include "iostream.hpp"
-#include "sgml.hpp"
+#include "string_map.hpp"
+#include "asc_ctype.hpp"
 
 #include <typeinfo>
 
 //#define DEBUG_FILTER
 
-using namespace aspell_filters;
-
 namespace {
+
+using namespace acommon;
 
 struct Iterator;
 
@@ -38,7 +39,6 @@ public:
   MarkdownFilter() : root(), back(&root), prev_blank(true), inline_state() {
     name_ = "markdown-filter";
     order_num_ = 0.35;
-    //html_filter = new_html_filter();
   }
   PosibErr<bool> setup(Config *);
   void reset();
@@ -47,8 +47,6 @@ public:
   void process(FilterChar * & start, FilterChar * & stop);
 
 private:
-  //SgmlFilter * html_filter;
-
   void dump() {
     CERR.printf(">>>blocks\n");
     for (Block * cur = &root; cur; cur = cur->next) {
@@ -671,18 +669,16 @@ PosibErr<bool> MarkdownFilter::setup(Config * cfg) {
   block_start_tags.clear();
   cfg->retrieve_list("f-markdown-block-start-tags", &block_start_tags);
 
-  //return html_filter->setup(cfg);
   return true;
 }
 
 void MarkdownFilter::reset() {
   // FIXME: Correctly implement me
-  //html_filter->reset();
 }
 
 
 MarkdownFilter::~MarkdownFilter() {
-  //delete html_filter;
+  // FIXME: Correctly implement me
 }
 
 void MarkdownFilter::process(FilterChar * & start, FilterChar * & stop) {
@@ -765,8 +761,6 @@ void MarkdownFilter::process(FilterChar * & start, FilterChar * & stop) {
       else
         itr.adv();
     }
-
-    //html_filter->process_inplace(start, i);
 
     itr.next_line();
 

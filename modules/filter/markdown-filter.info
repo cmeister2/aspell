@@ -1,11 +1,10 @@
 # SGML filter option file
 
-LIB-FILE sgml-filter
+LIB-FILE markdown-filter
 
 #This Filter is usable with the following version(s) of Aspell
-ASPELL >=0.51
+ASPELL >=0.60
 
-#This line will be printed when typing `Aspell help SGML'
 DESCRIPTION filter for Markdown/CommonMark documents
 
 STATIC filter

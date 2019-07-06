@@ -23,13 +23,13 @@
 
 #include "settings.h"
 
-#include "sgml.hpp"
+#include "asc_ctype.hpp"
 #include "config.hpp"
 #include "indiv_filter.hpp"
+#include "string_map.hpp"
 #include "mutable_container.hpp"
 #include "clone_ptr-t.hpp"
 #include "filter_char_vector.hpp"
-
 
 //right now unused option
 //  static const KeyInfo sgml_options[] = {
@@ -39,9 +39,25 @@
 
 namespace {
 
-  using namespace aspell_filters;
+  using namespace acommon;
 
-  class SgmlFilterImpl : public SgmlFilter
+  class ToLowerMap : public StringMap
+  {
+  public:
+    PosibErr<bool> add(ParmStr to_add) {
+      String new_key;
+      for (const char * i = to_add; *i; ++i) new_key += asc_tolower(*i);
+      return StringMap::add(new_key);
+    }
+
+    PosibErr<bool> remove(ParmStr to_rem) {
+      String new_key;
+      for (const char * i = to_rem; *i; ++i) new_key += asc_tolower(*i);
+      return StringMap::remove(new_key);
+    }
+  };
+
+  class SgmlFilter : public IndividualFilter 
   {
     // State enum. These states track where we are in the HTML/tag/element constructs.
     // This diagram shows the main states. The marked number is the state we enter
@@ -86,7 +102,7 @@ namespace {
     };
     
     ScanState in_what;
-	     // which quote char is quoting this attrib value.
+	     // which quote char is quoting this attrib value.	
     FilterChar::Chr  quote_val;   
 	    // one char prior to this one. For escape handling and such.
     FilterChar::Chr  lookbehind;   
@@ -108,15 +124,14 @@ namespace {
  
   public:
 
-    SgmlFilterImpl(const char * n) : which(n) {}
+    SgmlFilter(const char * n) : which(n) {}
 
     PosibErr<bool> setup(Config *);
     void reset();
-    void process_inplace(FilterChar *, FilterChar *);
     void process(FilterChar * &, FilterChar * &);
   };
 
-  PosibErr<bool> SgmlFilterImpl::setup(Config * opts) 
+  PosibErr<bool> SgmlFilter::setup(Config * opts) 
   {
     name_ = which + "-filter";
     order_num_ = 0.35;
@@ -128,7 +143,7 @@ namespace {
     return true;
   }
   
-  void SgmlFilterImpl::reset() 
+  void SgmlFilter::reset() 
   {
     in_what = S_text;
     quote_val = lookbehind = '\0';
@@ -141,7 +156,7 @@ namespace {
   // RETURNS: TRUE if the caller should skip the passed char and
   //  not do any spell check on it. FALSE if char is a part of the text
   //  of the document.
-  bool SgmlFilterImpl::process_char(FilterChar::Chr c) {
+  bool SgmlFilter::process_char(FilterChar::Chr c) {
   
     bool retval = true;  // DEFAULT RETURN VALUE. All returns are done
     			 // via retval and falling out the bottom. Except for
@@ -380,18 +395,14 @@ namespace {
     return( retval );
   }
   
-  void SgmlFilterImpl::process_inplace(FilterChar * cur, FilterChar * stop)
+  void SgmlFilter::process(FilterChar * & str, FilterChar * & stop)
   {
+    FilterChar * cur = str;
     while (cur != stop) {
       if (process_char(*cur))
 	*cur = ' ';
       ++cur;
     }
-  }
-
-  void SgmlFilterImpl::process(FilterChar * & str, FilterChar * & stop)
-  {
-    SgmlFilterImpl::process_inplace(str, stop);
   }
   
   //
@@ -500,7 +511,7 @@ namespace {
 
 C_EXPORT IndividualFilter * new_aspell_sgml_filter() 
 {
-  return new SgmlFilterImpl("sgml");
+  return new SgmlFilter("sgml");
 }
 C_EXPORT IndividualFilter * new_aspell_sgml_decoder() 
 {
@@ -511,14 +522,9 @@ C_EXPORT IndividualFilter * new_aspell_sgml_decoder()
 //   return new SgmlEncoder("sgml");
 // }
 
-SgmlFilter * aspell_filters::new_html_filter() 
-{
-  return new SgmlFilterImpl("html");
-}
-
 C_EXPORT IndividualFilter * new_aspell_html_filter() 
 {
-  return new SgmlFilterImpl("html");
+  return new SgmlFilter("html");
 }
 C_EXPORT IndividualFilter * new_aspell_html_decoder() 
 {

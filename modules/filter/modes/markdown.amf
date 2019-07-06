@@ -11,3 +11,5 @@ DESCRIPTION mode for checking Markdown/CommonMark documents
 
 FILTER url
 FILTER markdown
+FILTER sgml
+
