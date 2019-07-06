@@ -257,7 +257,7 @@ struct ListItem : Block {
 struct IndentedCodeBlock : Block {
   static IndentedCodeBlock * start_block(bool prev_blank, Iterator & itr) {
     if (prev_blank && !itr.eol() && itr.indent >= 4) {
-      itr.indent -= 4;
+      itr.blank_rest();
       return new IndentedCodeBlock();
     }
     return NULL;
