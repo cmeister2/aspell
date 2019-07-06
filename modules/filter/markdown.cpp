@@ -661,8 +661,7 @@ struct MultilineInlineState {
 
 PosibErr<bool> MarkdownFilter::setup(Config * cfg) {
   bool multiline_tags = cfg->retrieve_bool("f-markdown-multiline-tags");
-  if (inline_state)
-    free(inline_state);
+  delete inline_state;
   inline_state = new MultilineInlineState(multiline_tags);
   raw_start_tags.clear();
   cfg->retrieve_list("f-markdown-raw-start-tags",  &raw_start_tags);
@@ -673,12 +672,15 @@ PosibErr<bool> MarkdownFilter::setup(Config * cfg) {
 }
 
 void MarkdownFilter::reset() {
-  // FIXME: Correctly implement me
+  kill(root.next);
+  prev_blank = true;
+  inline_state->reset();
 }
 
 
 MarkdownFilter::~MarkdownFilter() {
-  // FIXME: Correctly implement me
+  kill(root.next);
+  delete inline_state;
 }
 
 void MarkdownFilter::process(FilterChar * & start, FilterChar * & stop) {
