@@ -28,9 +28,11 @@ namespace aspeller {
     bool use_typo_analysis;
     bool use_repl_table;
 
+    bool have_keyboard_def_file; 
+
     int normal_soundslike_weight; // percentage
 
-    int small_word_soundslike_weight; 
+    int small_word_soundslike_weight;
     int small_word_threshold;
     
     int soundslike_weight;
