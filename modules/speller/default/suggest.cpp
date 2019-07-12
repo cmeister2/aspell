@@ -1355,7 +1355,6 @@ namespace {
 #   ifdef DEBUG_SUGGEST
     COUT << "=========== begin suggest " << word << " ===========\n";
 #   endif
-    parms_.set_original_word_size(strlen(word));
     suggestion_list.suggestions.resize(0);
     Working sug(speller_, &speller_->lang(),word,&parms_);
     sug.get_suggestions(suggestion_list.suggestions);
@@ -1388,12 +1387,7 @@ namespace aspeller {
     edit_distance_weights.max = 100;
     edit_distance_weights.min =  90;
 
-    normal_soundslike_weight = 50;
-    small_word_soundslike_weight = 15;
-    small_word_threshold = 0; //4
-
-    soundslike_weight = normal_soundslike_weight;
-    word_weight       = 100 - normal_soundslike_weight;
+    soundslike_weight = 50;
 
     split_chars = " -";
 
@@ -1430,8 +1424,7 @@ namespace aspeller {
       try_scan_2 = true;
       try_ngram = true;
       use_typo_analysis = false;
-      normal_soundslike_weight = 55;
-      small_word_threshold = 0;
+      soundslike_weight = 55;
       span = 125;
       limit = 1000;
       ngram_threshold = 1;
@@ -1447,6 +1440,7 @@ namespace aspeller {
       }
     }
 
+    word_weight = 100 - soundslike_weight;
     return no_err;
   }
 
@@ -1455,12 +1449,5 @@ namespace aspeller {
     return new SuggestParms(*this);
   }
 
-  void SuggestParms::set_original_word_size(int size) {
-    if (size <= small_word_threshold) {
-      soundslike_weight = small_word_soundslike_weight;
-    } else {
-      soundslike_weight = normal_soundslike_weight;
-    }
-    word_weight = 100 - soundslike_weight;
-  }
 }
+

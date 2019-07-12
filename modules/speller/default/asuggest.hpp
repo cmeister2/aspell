@@ -30,11 +30,6 @@ namespace aspeller {
 
     bool have_keyboard_def_file; 
 
-    int normal_soundslike_weight; // percentage
-
-    int small_word_soundslike_weight;
-    int small_word_threshold;
-    
     int soundslike_weight;
     int word_weight;
 
@@ -51,7 +46,6 @@ namespace aspeller {
     
     virtual ~SuggestParms() {}
     virtual SuggestParms * clone() const;
-    virtual void set_original_word_size(int size);
   };
   
   Suggest * new_default_suggest(const Speller *, const SuggestParms &);
