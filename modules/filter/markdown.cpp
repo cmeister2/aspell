@@ -875,14 +875,16 @@ void MarkdownFilter::process(FilterChar * & start, FilterChar * & stop) {
     // now process line, mainly blank inline code and handle html tags
       
     while (!itr.eol()) {
-      inline_state->ptr = inline_state->inline_code.open(itr);
-      if (inline_state->ptr) break;
-      inline_state->ptr = inline_state->comment.open(itr);
-      if (inline_state->ptr) break;
-      inline_state->ptr = inline_state->tag.open(itr);
-      if (inline_state->ptr) break;
-      inline_state->ptr = inline_state->link_url.open(itr);
-      if (inline_state->ptr) break;
+      void * pos = itr.pos();
+#define TRY(what) \
+  inline_state->ptr = inline_state->what.open(itr);  \
+  if (inline_state->ptr) break; \
+  if (itr.pos() != pos) continue
+      TRY(inline_code);
+      TRY(comment);
+      TRY(tag);
+      TRY(link_url);
+#undef TRY
       if (*itr == '<' || *itr == '>')
         itr.blank_adv();
       else
