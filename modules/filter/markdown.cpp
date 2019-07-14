@@ -96,18 +96,25 @@ inline void blank(FilterChar & chr) {
 }
 
 struct Iterator {
+  FilterChar * line_start;
   FilterChar * i;
   FilterChar * end;
   int line_pos;
   int indent;
   Iterator(FilterChar * start, FilterChar * stop)
-    : i(start), end(stop), line_pos(), indent() {}
+    : line_start(start), i(start), end(stop), line_pos(), indent() {}
   void * pos() {return i;}
-  unsigned int operator[](unsigned x) const {
-    if (i + x >= end) return '\0';
-    if (*i == '\r' || *i == '\n') return '\0';
-    else return i[x];
+  unsigned int operator[](int x) const {
+    if (x < 0) {
+      if (i + x >= line_start) return i[x];
+      else return '\0';
+    } else {
+      if (i + x >= end) return '\0';
+      if (*i == '\r' || *i == '\n') return '\0';
+      else return i[x];
+    }
   }
+  bool escaped() const {return operator[](-1) == '\\';}
   unsigned int operator *() const {return operator[](0); }
   bool eol() const {return operator*() == '\0';}
   bool at_end() const {return i >= end;}
@@ -115,6 +122,10 @@ struct Iterator {
     if (i == end) return 0;
     if (*i == '\t') return 4  - (line_pos % 4);
     return 1;
+  }
+  // u_eq = not escaped and equal
+  bool u_eq(char chr) {
+    return /*!escaped() &&*/ operator*() == chr;
   }
   bool eq(const char * str) {
     int i = 0;
@@ -124,7 +135,7 @@ struct Iterator {
   }
   void inc() {
     indent = 0;
-    if (i == end) return;
+    if (eol()) return;
     line_pos += width();
     ++i;
   }
@@ -181,6 +192,7 @@ void Iterator::next_line() {
     ++i;
   }
   line_pos = 0;
+  line_start = i;
 }
 
 //
@@ -371,7 +383,7 @@ struct MultilineInline {
 struct InlineCode : MultilineInline {
   int marker_len;
   MultilineInline * open(Iterator & itr) {
-    if (*itr == '`') {
+    if (itr.u_eq('`')) {
       int i = 1;
       while (itr[i] == '`')
         ++i;
@@ -609,7 +621,7 @@ struct LinkUrl : MultilineInline {
   }
   MultilineInline * open(Iterator & itr) {
     reset();
-    if (itr[0] == ')' && itr[1] == '[') {
+    if (itr.u_eq(']') && itr[1] == '(') {
       itr.adv(2);
       state = BeforeUrl;
       return close(itr);
@@ -623,10 +635,10 @@ struct LinkUrl : MultilineInline {
     case BeforeUrl:
       if (itr.eol())
         return incomplete(st, itr);
-      if (*itr == '<') {
+      if (itr.u_eq('<')) {
         itr.adv();
         st.blank_start = itr.i;
-        while (!itr.eol() && *itr != '>')
+        while (!itr.eol() && !itr.u_eq('>'))
           itr.adv();
         if (itr.eol())
           return invalid(st, itr);
@@ -634,7 +646,7 @@ struct LinkUrl : MultilineInline {
         itr.adv();
       } else {
         st.blank_start = itr.i;
-        while (!itr.eol() && *itr != ']' && !asc_isspace(*itr))
+        while (!itr.eol() && !itr.u_eq(')') && !asc_isspace(*itr))
           itr.inc();
         if (itr.eol())
           return invalid(st, itr);
@@ -643,21 +655,21 @@ struct LinkUrl : MultilineInline {
       }
       state = AfterUrl;
     case AfterUrl:
-      if (*itr == ']')
+      if (itr.u_eq(')'))
         return valid(st, itr);
-      if (*itr == '\'') {
+      if (itr.u_eq('\'')) {
         itr.inc();
         state = InSingleQ;
       case InSingleQ:
-        while (!itr.eol() && *itr != '\'')
+        while (!itr.eol() && !itr.u_eq('\''))
           itr.inc();
         if (itr.eol())
           return incomplete(st, itr);
-      } else if (*itr == '\"') {
+      } else if (itr.u_eq('\"')) {
         itr.inc();
         state = InDoubleQ;
       case InDoubleQ:
-        while (!itr.eol() && *itr != '"')
+        while (!itr.eol() && !itr.u_eq('"'))
           itr.inc();
         if (itr.eol())
           return incomplete(st, itr);
@@ -665,7 +677,7 @@ struct LinkUrl : MultilineInline {
       itr.adv();
       state = AfterQuote;
     case AfterQuote:
-      if (*itr == ']')
+      if (itr.u_eq(')'))
         return valid(st, itr);
       return invalid(st, itr);
     case Valid: case Invalid:
