@@ -660,7 +660,7 @@ Block * start_html_block(Iterator & itr, HtmlTag & tag,
 
 struct LinkUrl : MultilineInline {
   LinkUrl() {reset();}
-  enum State {Invalid, BeforeUrl, AfterUrl, InSingleQ, InDoubleQ, AfterQuote, Valid};
+  enum State {Invalid, BeforeUrl, AfterUrl, InSingleQ, InDoubleQ, InParanQ, AfterQuote, Valid};
   State state;
   struct LineState {
     Iterator itr0;
@@ -721,6 +721,15 @@ struct LinkUrl : MultilineInline {
         state = InDoubleQ;
       case InDoubleQ:
         while (!itr.eol() && !itr.u_eq('"'))
+          itr.inc();
+        if (itr.eol())
+          return state;
+        itr.adv();
+        state = AfterQuote;
+      } else if (itr.u_eq('(')) {
+        state = InParanQ;
+      case InParanQ:
+        while (!itr.eol() && !itr.u_eq(')'))
           itr.inc();
         if (itr.eol())
           return state;
