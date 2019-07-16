@@ -36,7 +36,7 @@ struct MultilineInlineState;
 
 class MarkdownFilter : public IndividualFilter {
 public:
-  MarkdownFilter() : skip_ref_labels(true), root(), back(&root), prev_blank(true), inline_state() {
+  MarkdownFilter() : root(), back(&root), prev_blank(true), inline_state() {
     name_ = "markdown-filter";
     order_num_ = 0.30; // need to be before SGML filter
   }
@@ -55,8 +55,6 @@ private:
     CERR.printf("<<<blocks\n");
   }
 
-  bool skip_ref_labels;
-  
   StringMap block_start_tags;
   StringMap raw_start_tags;
   
@@ -128,7 +126,7 @@ struct Iterator {
   }
   // u_eq = not escaped and equal
   bool u_eq(char chr) {
-    return /*!escaped() &&*/ operator*() == chr;
+    return !escaped() && operator*() == chr;
   }
   bool eq(const char * str) {
     int i = 0;
@@ -445,10 +443,10 @@ bool parse_tag_close(Iterator & itr) {
 // note: does _not_ eat trialing whitespaceb
 bool parse_tag_name(Iterator & itr, String & tag) {
   if (asc_isalpha(*itr)) {
-    tag += static_cast<char>(*itr);
+    tag += asc_tolower(*itr);
     itr.inc();
     while (asc_isalpha(*itr) || asc_isdigit(*itr) || *itr == '-') {
-      tag += static_cast<char>(*itr);
+      tag += asc_tolower(*itr);
       itr.inc();
     }
     return true;
@@ -871,7 +869,7 @@ struct MultilineInlineState {
 //
 
 PosibErr<bool> MarkdownFilter::setup(Config * cfg) {
-  skip_ref_labels = cfg->retrieve_bool("f-markdown-skip-ref-labels");
+  bool skip_ref_labels = cfg->retrieve_bool("f-markdown-skip-ref-labels");
   bool multiline_tags = cfg->retrieve_bool("f-markdown-multiline-tags");
   delete inline_state;
   inline_state = new MultilineInlineState(multiline_tags, skip_ref_labels);
@@ -992,7 +990,7 @@ Block * MarkdownFilter::start_block(Iterator & itr) {
     || (nblk = FencedCodeBlock::start_block(itr))
     || (nblk = BlockQuote::start_block(itr))
     || (nblk = ListItem::start_block(itr))
-    || (nblk = LinkRefDefinition::start_block(itr, skip_ref_labels))
+    || (nblk = LinkRefDefinition::start_block(itr, inline_state->link.skip_ref_labels))
     || (nblk = SingleLineBlock::start_block(itr))
     || (nblk = start_html_block(itr, inline_state->tag, block_start_tags, raw_start_tags));
   return nblk;
