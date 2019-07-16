@@ -36,7 +36,7 @@ struct MultilineInlineState;
 
 class MarkdownFilter : public IndividualFilter {
 public:
-  MarkdownFilter() : root(), back(&root), prev_blank(true), inline_state() {
+  MarkdownFilter() : skip_ref_labels(true), root(), back(&root), prev_blank(true), inline_state() {
     name_ = "markdown-filter";
     order_num_ = 0.30; // need to be before SGML filter
   }
@@ -55,6 +55,8 @@ private:
     CERR.printf("<<<blocks\n");
   }
 
+  bool skip_ref_labels;
+  
   StringMap block_start_tags;
   StringMap raw_start_tags;
   
@@ -658,10 +660,11 @@ Block * start_html_block(Iterator & itr, HtmlTag & tag,
 // Link handling
 // 
 
-struct LinkUrl : MultilineInline {
-  LinkUrl() {reset();}
+struct Link : MultilineInline {
+  Link(bool s) : skip_ref_labels(s) {reset();}
   enum State {Invalid, BeforeUrl, AfterUrl, InSingleQ, InDoubleQ, InParanQ, AfterQuote, Valid};
   State state;
+  bool skip_ref_labels;
   struct LineState {
     Iterator itr0;
     FilterChar * blank_start;
@@ -674,9 +677,23 @@ struct LinkUrl : MultilineInline {
   }
   MultilineInline * open(Iterator & itr) {
     reset();
-    if (itr.u_eq(']') && itr[1] == '(') {
-      itr.adv(2);
-      return close(itr);
+    if (itr.u_eq(']')) {
+      // no space allowed between ']' and '(' or '[';
+      if (itr[1] == '(') {
+        itr.adv(2);
+        return close(itr);
+      } else if (skip_ref_labels && itr[1] == '[') {
+        LineState st(itr);
+        itr.adv(2);
+        st.blank_start = itr.i;
+        while (!itr.eol() && !itr.u_eq(']'))
+          itr.adv();
+        st.blank_stop = itr.i;
+        if (!itr.eol())
+          return valid(st,itr);
+        else
+          return invalid(st, itr);
+      }
     }
     state = Invalid;
     return NULL;
@@ -739,7 +756,7 @@ struct LinkUrl : MultilineInline {
     }
     return state;
   }
-  LinkUrl * parse_url_label(Iterator & itr, char close) {
+  Link * parse_url_label(Iterator & itr, char close) {
     LineState st(itr);
     itr.eat_space();
     switch (state) {
@@ -763,51 +780,57 @@ struct LinkUrl : MultilineInline {
   MultilineInline * close(Iterator & itr) {
     return parse_url_label(itr, ')');
   }
-  void blank(const LineState & st) {
+  static void blank(const LineState & st) {
     for (FilterChar * i = st.blank_start; i != st.blank_stop; ++i) {
       ::blank(*i);
     }
   }
-  LinkUrl * valid(const LineState & st, Iterator & itr) {
+  Link * valid(const LineState & st, Iterator & itr) {
     itr.adv(); // skip over closing tag
     blank(st);
     state = Valid;
     return NULL;
   }
-  LinkUrl * invalid(const LineState & st, Iterator & itr) {
+  Link * invalid(const LineState & st, Iterator & itr) {
     state = Invalid;
     itr = st.itr0;
     return NULL;
   }
-  LinkUrl * incomplete(const LineState & st, Iterator & itr) {
+  Link * incomplete(const LineState & st, Iterator & itr) {
     blank(st);
     return this;
   }
 };
 
 struct LinkRefDefinition : Block {
-  LinkUrl link_url;
-  LinkUrl * multiline;
-  static LinkRefDefinition * start_block(Iterator & itr) {
+  Link link;
+  Link * multiline;
+  LinkRefDefinition() : link(false) {}
+  static LinkRefDefinition * start_block(Iterator & itr, bool skip_ref_labels) {
+    Link::LineState st(itr);
     if (*itr == '[') {
-      Iterator i = itr;
-      i.adv();
-      if (*i == ']') return NULL;
-      while (!i.eol() && *i != ']') {
-        i.adv();
+      itr.adv();
+      st.blank_start = itr.i;
+      if (*itr == ']') goto fail;
+      while (!itr.eol() && !itr.u_eq(']')) {
+        itr.adv();
       }
-      i.inc();
-      if (*i != ':') return NULL;
-      i.adv();
+      st.blank_stop = itr.i;
+      itr.inc();
+      if (*itr != ':') goto fail;
+      itr.adv();
       LinkRefDefinition * obj = new LinkRefDefinition();
-      obj->multiline = obj->link_url.parse_url_label(i, '\0');
-      if (obj->link_url.state == LinkUrl::Invalid) {
+      obj->multiline = obj->link.parse_url_label(itr, '\0');
+      if (obj->link.state == Link::Invalid) {
         delete obj;
-        return NULL;
+        goto fail;
       }
-      itr = i;
+      if (skip_ref_labels)
+        Link::blank(st);
       return obj;
     }
+  fail:
+    itr = st.itr0;
     return NULL;
   }
   KeepOpenState proc_line(Iterator & itr) {
@@ -828,18 +851,18 @@ struct LinkRefDefinition : Block {
 //
 
 struct MultilineInlineState {
-  MultilineInlineState(bool mlt) : ptr(), tag(mlt) {}
+  MultilineInlineState(bool mlt, bool s) : ptr(), tag(mlt), link(s) {}
   MultilineInline * ptr;
   InlineCode inline_code;
   HtmlComment comment;
   HtmlTag tag;
-  LinkUrl link_url;
+  Link link;
   void clear_cache() {
     tag.clear_cache();
   }
   void reset() {
     tag.reset();
-    link_url.reset();
+    link.reset();
   }
 };
 
@@ -848,9 +871,10 @@ struct MultilineInlineState {
 //
 
 PosibErr<bool> MarkdownFilter::setup(Config * cfg) {
+  skip_ref_labels = cfg->retrieve_bool("f-markdown-skip-ref-labels");
   bool multiline_tags = cfg->retrieve_bool("f-markdown-multiline-tags");
   delete inline_state;
-  inline_state = new MultilineInlineState(multiline_tags);
+  inline_state = new MultilineInlineState(multiline_tags, skip_ref_labels);
   raw_start_tags.clear();
   cfg->retrieve_list("f-markdown-raw-start-tags",  &raw_start_tags);
   block_start_tags.clear();
@@ -947,7 +971,7 @@ void MarkdownFilter::process(FilterChar * & start, FilterChar * & stop) {
       TRY(inline_code);
       TRY(comment);
       TRY(tag);
-      TRY(link_url);
+      TRY(link);
 #undef TRY
       if (*itr == '<' || *itr == '>')
         itr.blank_adv();
@@ -968,7 +992,7 @@ Block * MarkdownFilter::start_block(Iterator & itr) {
     || (nblk = FencedCodeBlock::start_block(itr))
     || (nblk = BlockQuote::start_block(itr))
     || (nblk = ListItem::start_block(itr))
-    || (nblk = LinkRefDefinition::start_block(itr))
+    || (nblk = LinkRefDefinition::start_block(itr, skip_ref_labels))
     || (nblk = SingleLineBlock::start_block(itr))
     || (nblk = start_html_block(itr, inline_state->tag, block_start_tags, raw_start_tags));
   return nblk;
