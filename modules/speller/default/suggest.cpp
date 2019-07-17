@@ -255,7 +255,7 @@ namespace {
     int typo_weighted_average(int soundslike_score, int word_score) {
       if (word_score < 100) {
         const int factor = 8;
-        int soundslike_weight = (parms->soundslike_weight+(factor-10))/factor;
+        int soundslike_weight = (parms->soundslike_weight+factor-1)/factor;
         return (parms->word_weight*word_score 
                 + soundslike_weight*soundslike_score)/100;
       } else {
@@ -1219,6 +1219,7 @@ namespace {
           if (max < i->score) max = i->score;
         }
       }
+      // fixme? why is this necessary
       threshold = max;
       for (;i != scored_near_misses.end() && i->score <= threshold; ++i)
         i->score = threshold + 1;
