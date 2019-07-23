@@ -65,7 +65,7 @@
 
 #include "gettext.h"
 
-#include "iostream.hpp"
+//#include "iostream.hpp"
 //#define DEBUG_SUGGEST
 
 using namespace aspeller;
@@ -1219,8 +1219,13 @@ namespace {
             for (j = 0; (i->word)[j] != 0; ++j)
               word[j] = parms->ti->to_normalized((i->word)[j]);
             word[j] = 0;
-            i->word_score 
-              = typo_edit_distance(ParmString(word.data(), j), orig, *parms->ti);
+            int new_score = typo_edit_distance(ParmString(word.data(), j), orig, *parms->ti);
+            // the typo edit distance may not be smaller than the
+            // existing one, for example if repl. tables are used
+            if (new_score < i->word_score) {
+              i->word_score
+                = typo_edit_distance(ParmString(word.data(), j), orig, *parms->ti);
+            }
             i->score = typo_weighted_average(i->soundslike_score, i->word_score);
           }
           if (max < i->score) max = i->score;
