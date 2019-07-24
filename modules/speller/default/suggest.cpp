@@ -169,7 +169,7 @@ namespace {
   class Working : public Score {
    
     int threshold;
-    int try_harder;
+    int try_harder; // 0 means no, 1-2 means maybe, 3 means yes
 
     EditDist (* edit_dist_fun)(const char *, const char *,
                                const EditDistanceWeights &);
@@ -1456,8 +1456,8 @@ namespace aspeller {
       try_scan_2 = true;
       try_ngram = true;
       use_typo_analysis = false;
-      soundslike_weight = 55;
-      span = 125;
+      soundslike_weight = 75;
+      //span = 125;
       limit = 1000;
       ngram_threshold = 1;
     } else {
