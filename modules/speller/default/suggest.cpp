@@ -337,12 +337,15 @@ namespace {
 #endif
 
       try_one_edit_word();
-
+      score_list();
       if (parms->check_after_one_edit_word) {
-        score_list();
         if (try_harder <= 0) goto done;
       }
-
+      // need to fine tune the score to account for special weights
+      // applied to typos, otherwise some typos that produce very
+      // different soundslike may be missed
+      threshold = LARGE_NUM;
+      fine_tune_score();
     }
 
     if (parms->try_scan_0) {
