@@ -107,12 +107,13 @@ namespace {
     //unsigned word_size;
     const char * soundslike;
     int           score;
+    int           adj_score;
     int           word_score;
     int           soundslike_score;
     bool          count;
     bool          split; // true the result of splitting a word
     WordEntry * repl_list;
-    ScoreWordSound() {repl_list = 0; }
+    ScoreWordSound() : adj_score(LARGE_NUM), repl_list(0) {}
     ~ScoreWordSound() {delete repl_list;}
   };
 
@@ -122,6 +123,14 @@ namespace {
     int temp = lhs.score - rhs.score;
     if (temp) return temp;
     return strcmp(lhs.word,rhs.word);
+  }
+
+  inline int adj_score_lt(const ScoreWordSound &lhs,
+                          const ScoreWordSound &rhs)
+  {
+    int temp = lhs.adj_score - rhs.adj_score;
+    if (temp) return temp < 0;
+    return strcmp(lhs.word,rhs.word) < 0;
   }
 
   inline bool operator < (const ScoreWordSound & lhs, 
@@ -169,6 +178,7 @@ namespace {
   class Working : public Score {
    
     int threshold;
+    int adj_threshold;
     int try_harder; // 0 means no, 1-2 means maybe, 3 means yes
 
     EditDist (* edit_dist_fun)(const char *, const char *,
@@ -301,7 +311,7 @@ namespace {
     void try_ngram();
 
     void score_list();
-    void fine_tune_score();
+    void fine_tune_score(int thres);
     void transfer();
   public:
     Working(SpellerImpl * m, const Language *l,
@@ -344,8 +354,7 @@ namespace {
       // need to fine tune the score to account for special weights
       // applied to typos, otherwise some typos that produce very
       // different soundslike may be missed
-      threshold = LARGE_NUM;
-      fine_tune_score();
+      fine_tune_score(LARGE_NUM);
     }
 
     if (parms->try_scan_0) {
@@ -414,8 +423,6 @@ namespace {
     }
 
   done:
-
-    fine_tune_score();
 
     transfer();
   }
@@ -1203,12 +1210,12 @@ namespace {
 #  endif
   }
 
-  void Working::fine_tune_score() {
+  void Working::fine_tune_score(int thres) {
 
     NearMisses::iterator i;
 
     if (parms->use_typo_analysis) {
-      int max = 0;
+      adj_threshold = 0;
       if (parms->have_keyboard_def_file) {
         unsigned int j;
         
@@ -1221,13 +1228,15 @@ namespace {
         word.resize(max_word_length + 1);
         
         for (i = scored_near_misses.begin();
-             i != scored_near_misses.end() && i->score <= threshold;
+             i != scored_near_misses.end() && i->score <= thres;
              ++i)
         {
+          if (i->adj_score < LARGE_NUM)
+            continue;
           if (i->split) {
             i->word_score = parms->ti->max + 2;
             i->soundslike_score = i->word_score;
-            i->score = i->word_score;
+            i->adj_score = i->word_score;
           } else {
             for (j = 0; (i->word)[j] != 0; ++j)
               word[j] = parms->ti->to_normalized((i->word)[j]);
@@ -1239,25 +1248,30 @@ namespace {
               i->word_score
                 = typo_edit_distance(ParmString(word.data(), j), orig, *parms->ti);
             }
-            i->score = adj_wighted_average(i->soundslike_score, i->word_score);
+            i->adj_score = adj_wighted_average(i->soundslike_score, i->word_score);
           }
-          if (max < i->score) max = i->score;
+          if (i->adj_score > adj_threshold)
+            adj_threshold = i->adj_score;
         }
       } else {
         for (i = scored_near_misses.begin();
-             i != scored_near_misses.end() && i->score <= threshold;
+             i != scored_near_misses.end() && i->score <= thres;
              ++i)
         {
-          if (!i->split)
-            i->score = adj_wighted_average(i->soundslike_score, i->word_score);
-          if (max < i->score) max = i->score;
+          if (i->adj_score >= LARGE_NUM && !i->split)
+            i->adj_score = adj_wighted_average(i->soundslike_score, i->word_score);
+          if (i->adj_score > adj_threshold)
+            adj_threshold = i->adj_score;
         }
       }
-      threshold = max;
-      for (;i != scored_near_misses.end() && i->score <= threshold; ++i)
-        i->score = threshold + 1;
-
-      scored_near_misses.sort();
+    } else {
+      for (i = scored_near_misses.begin();
+           i != scored_near_misses.end() && i->score <= thres;
+           ++i)
+      {
+        i->adj_score = i->score;
+      }
+      adj_threshold = threshold;
     }
   }
 
@@ -1270,6 +1284,9 @@ namespace {
 	 << "\n";
     String sl;
 #  endif
+    fine_tune_score(threshold);
+    scored_near_misses.sort(adj_score_lt);
+
     int c = 1;
     hash_set<String,HashString<String> > duplicates_check;
     String buf;
@@ -1277,11 +1294,13 @@ namespace {
     pair<hash_set<String,HashString<String> >::iterator, bool> dup_pair;
     for (NearMisses::const_iterator i = scored_near_misses.begin();
 	 i != scored_near_misses.end() && c <= parms->limit
-	   && ( i->score <= threshold || c <= 3 );
+           && ( i->adj_score <= adj_threshold || c <= 3 );
 	 ++i, ++c) {
 #    ifdef DEBUG_SUGGEST
       //COUT.printf("%p %p: ",  i->word, i->soundslike);
-      COUT << i->word << '\t' << i->score 
+      COUT << i->word
+           << '\t' << i->adj_score 
+           << '\t' << i->score 
            << '\t' << i->word_score
            << '\t' << i->soundslike
            << '\t' << i->soundslike_score << "\n";
